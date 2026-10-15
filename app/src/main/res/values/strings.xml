@@ -25,5 +25,6 @@
     <string name="app_info">App info</string>
     <string name="clear_recents">Clear recent apps</string>
     <string name="cleanup_stale">Remove uninstalled pins</string>
+    <string name="a11y_desc">Shows Back, Home and Recents buttons at the top of the screen and performs those actions when tapped. EdgeTaskbar does not read or record anything on your screen.</string>
     <string name="not_launchable">Pinned apps must have a launchable screen</string>
 </resources>

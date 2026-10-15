@@ -90,7 +90,6 @@ class OverlayService : Service() {
         val m = OverlayManager(this, scope, repo, catalog) { shutdown(disable = true) }
         manager = m
         m.start()
-        android.widget.Toast.makeText(this, "Taskbar started. Tap the small bar on your screen edge to open it.", android.widget.Toast.LENGTH_LONG).show()
 
         ContextCompat.registerReceiver(
             this, packageReceiver,

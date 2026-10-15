@@ -14,6 +14,12 @@ import com.inwekobong.edgetaskbar.data.DockEdge
 import com.inwekobong.edgetaskbar.data.SettingsRepository
 import com.inwekobong.edgetaskbar.data.TaskbarSettings
 import com.inwekobong.edgetaskbar.data.ThemeMode
+import com.inwekobong.edgetaskbar.data.WindowMode
+import com.inwekobong.edgetaskbar.nav.NavAccessibilityService
+import com.inwekobong.edgetaskbar.windows.WindowLauncher
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.provider.Settings
 import com.inwekobong.edgetaskbar.overlay.dp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -73,6 +79,36 @@ class SettingsActivity : AppCompatActivity() {
             change { it.copy(theme = ThemeMode.values()[idx]) }
         })
 
+        col.addView(header("BOTTOM BAR, NAV BUTTONS & WINDOWS"))
+        col.addView(switchRow("Pin taskbar to bottom (always visible)", s.pinnedBar) { b -> change { it.copy(pinnedBar = b) } })
+        col.addView(switchRow("Back / Home / Recents buttons at top", s.navTop) { b ->
+            change { it.copy(navTop = b) }
+            if (b && NavAccessibilityService.instance == null) {
+                Toast.makeText(this, "Turn on EdgeTaskbar in Accessibility settings", Toast.LENGTH_LONG).show()
+                openAccessibility()
+            }
+        })
+        col.addView(text("Window layout for launched apps", 14f).apply { setPadding(0, dp(10), 0, 0) })
+        col.addView(radioGroup(WindowMode.values().map { it.label }, s.windowMode.ordinal, vertical = true) { idx ->
+            WindowLauncher.resetSlots()
+            change { it.copy(windowMode = WindowMode.values()[idx]) }
+        })
+        val freeform = packageManager.hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT)
+        col.addView(text(
+            (if (freeform) "This device reports free-form window support. " else
+                "This device does not report free-form window support; Split/Quad may still work, free-form may open full screen. ") +
+                "Windows are drawn and moved by Android itself (drag the title bar, resize edges). Apps that disable resizing open full screen. " +
+                "Whether several apps keep playing audio at once is decided by each app.", 12f))
+        col.addView(button("Set EdgeTaskbar as home app") { launchSettings(Settings.ACTION_HOME_SETTINGS) })
+        col.addView(button("Open accessibility settings") { openAccessibility() })
+        col.addView(button("Open developer options (free-form windows)") {
+            launchSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+        })
+        col.addView(text(
+            "Android cannot hide or move its own navigation bar. For a clean bottom, switch System navigation to " +
+                "Gestures. On Android 13+, if the accessibility switch is greyed out: Settings > Apps > EdgeTaskbar > " +
+                "menu > Allow restricted settings.", 12f))
+
         col.addView(header("BEHAVIOR"))
         col.addView(switchRow("Collapse after launching an app", s.collapseAfterLaunch) { b -> change { it.copy(collapseAfterLaunch = b) } })
         col.addView(sliderRow("Auto-collapse after (0 = never)", 0, 60, s.autoCollapseSeconds, " s") { v -> change { it.copy(autoCollapseSeconds = v) } })
@@ -102,12 +138,22 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(android.content.Intent(this, AppPickerActivity::class.java))
         })
 
-        setContentView(ScrollView(this).apply { addView(col); fitSystemBars() })
+        setContentView(ScrollView(this).apply { addView(col) })
     }
 
-    private fun radioGroup(labels: List<String>, checked: Int, onPick: (Int) -> Unit): RadioGroup =
+    private fun openAccessibility() = launchSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+
+    private fun launchSettings(action: String) {
+        try { startActivity(Intent(action)) } catch (_: Exception) {
+            Toast.makeText(this, "Not available on this device", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun radioGroup(
+        labels: List<String>, checked: Int, vertical: Boolean = false, onPick: (Int) -> Unit,
+    ): RadioGroup =
         RadioGroup(this).apply {
-            orientation = RadioGroup.HORIZONTAL
+            orientation = if (vertical) RadioGroup.VERTICAL else RadioGroup.HORIZONTAL
             labels.forEachIndexed { i, l ->
                 addView(RadioButton(context).apply { id = 1000 + i; text = l; setPadding(0, 0, dp(12), 0) })
             }

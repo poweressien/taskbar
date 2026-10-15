@@ -19,6 +19,8 @@ import com.inwekobong.edgetaskbar.data.DockAlign
 import com.inwekobong.edgetaskbar.data.DockEdge
 import com.inwekobong.edgetaskbar.data.SettingsRepository
 import com.inwekobong.edgetaskbar.data.TaskbarSettings
+import com.inwekobong.edgetaskbar.data.WindowMode
+import com.inwekobong.edgetaskbar.windows.WindowLauncher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.max
@@ -91,7 +93,7 @@ class OverlayManager(
     }
 
     fun collapse() {
-        if (!expanded) return
+        if (!expanded || settings.pinnedBar) return
         expanded = false
         handler.removeCallbacks(collapseRunnable)
         applyState()
@@ -111,6 +113,7 @@ class OverlayManager(
         if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(ctx)) {
             stop(); onPermissionLost(); return
         }
+        if (settings.pinnedBar) expanded = true // pinned bar never collapses
         val suppressed = settings.temporarilyHidden || (settings.hideOnKeyboard && imeVisible)
         if (suppressed) { removeHandle(); removeDock(); return }
         try {
@@ -144,7 +147,7 @@ class OverlayManager(
         val s = settings
         val dark = Geometry.isDark(ctx, s.theme)
         val horizontal = s.edge.isHorizontal
-        val thick = ctx.dp(32)
+        val thick = ctx.dp(24)
         val length = ctx.dp(s.handleLengthDp)
         val w = if (horizontal) length else thick
         val h = if (horizontal) thick else length
@@ -216,7 +219,9 @@ class OverlayManager(
 
     private fun showDock() {
         removeDock()
-        val s = settings
+        val s = settings.let {
+            if (it.pinnedBar) it.copy(edge = DockEdge.BOTTOM, align = DockAlign.CENTER) else it
+        }
         val dark = Geometry.isDark(ctx, s.theme)
         val horizontal = s.edge.isHorizontal
         val r = Geometry.usableRect(ctx, wm)
@@ -232,7 +237,7 @@ class OverlayManager(
             .take(s.maxVisibleIcons)
 
         // How many icons fit on a page along the dock's main axis.
-        val avail = (if (horizontal) r.width() else r.height()) - 2 * margin - 2 * padPx - 2 * ctrlPx
+        val avail = (if (horizontal) r.width() else r.height()) - 2 * margin - 2 * padPx - 3 * ctrlPx
         val fit = max(1, avail / (iconPx + gapPx))
         val pageSize = min(s.maxVisibleIcons, fit)
         val pages = max(1, (entries.size + pageSize - 1) / pageSize)
@@ -248,6 +253,7 @@ class OverlayManager(
             setPadding(padPx, padPx, padPx, padPx)
             elevation = ctx.dpf(8f)
             clipToPadding = false
+            if (s.pinnedBar) gravity = Gravity.CENTER_HORIZONTAL
         }
 
         // Primary strip: [icons (swipeable)] [collapse] [hide]
@@ -275,11 +281,15 @@ class OverlayManager(
             swipe.addView(icon)
         }
         strip.addView(swipe)
-        strip.addView(makeLabelButton(ctx, "–", ctrlPx, dark, "Collapse dock") { collapse() }.also {
+        strip.addView(makeLabelButton(ctx, s.windowMode.glyph, ctrlPx, dark,
+            "Window layout: ${s.windowMode.label}. Tap to change") { cycleLayout() }.also {
             (it.layoutParams as LinearLayout.LayoutParams).apply {
                 if (horizontal) leftMargin = gapPx else topMargin = gapPx
             }
         })
+        if (!s.pinnedBar) {
+            strip.addView(makeLabelButton(ctx, "–", ctrlPx, dark, "Collapse dock") { collapse() })
+        }
         strip.addView(makeLabelButton(ctx, "×", ctrlPx, dark, "Hide taskbar temporarily") {
             scope.launch { repo.update { st -> st.copy(temporarilyHidden = true) } }
         })
@@ -296,7 +306,7 @@ class OverlayManager(
             root.addView(dots)
         }
 
-        if (recentEntries.isNotEmpty()) {
+        if (recentEntries.isNotEmpty() && !s.pinnedBar) { // pinned bar stays slim and predictable
             val recentRow = LinearLayout(ctx).apply {
                 orientation = if (horizontal) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
@@ -328,7 +338,7 @@ class OverlayManager(
             View.MeasureSpec.makeMeasureSpec(maxW, View.MeasureSpec.AT_MOST),
             View.MeasureSpec.makeMeasureSpec(maxH, View.MeasureSpec.AT_MOST)
         )
-        val w = root.measuredWidth
+        val w = if (s.pinnedBar) r.width() - 2 * margin else root.measuredWidth
         val h = root.measuredHeight
         val lp = baseParams(w, h, WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
 
@@ -356,13 +366,23 @@ class OverlayManager(
     private fun scheduleAutoCollapse() {
         handler.removeCallbacks(collapseRunnable)
         val secs = settings.autoCollapseSeconds
-        if (expanded && secs > 0) handler.postDelayed(collapseRunnable, secs * 1000L)
+        if (expanded && secs > 0 && !settings.pinnedBar) handler.postDelayed(collapseRunnable, secs * 1000L)
     }
 
     private fun removeDock() {
         handler.removeCallbacks(collapseRunnable)
         dockView?.let { try { wm.removeViewImmediate(it) } catch (_: Exception) { } }
         dockView = null
+    }
+
+    private fun cycleLayout() {
+        WindowLauncher.resetSlots()
+        scope.launch {
+            repo.update {
+                val all = WindowMode.values()
+                it.copy(windowMode = all[(it.windowMode.ordinal + 1) % all.size])
+            }
+        }
     }
 
     private fun openMain() {
@@ -376,7 +396,7 @@ class OverlayManager(
     }
 
     private fun launchApp(pkg: String) {
-        val ok = catalog.launch(pkg)
+        val ok = WindowLauncher.launch(ctx, settings, pkg)
         if (ok) {
             scope.launch { repo.addRecent(pkg) }
             if (settings.collapseAfterLaunch) collapse() else scheduleAutoCollapse()

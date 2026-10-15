@@ -42,7 +42,6 @@ class AppPickerActivity : AppCompatActivity() {
     private var query = ""
     private var pinnedMode = false
     private var loaded = false
-    private var loadError: String? = null
 
     private lateinit var empty: TextView
     private lateinit var progress: ProgressBar
@@ -90,7 +89,6 @@ class AppPickerActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
         }
         root.addView(rv)
-        root.fitSystemBars()
         setContentView(root)
 
         ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT) {
@@ -115,11 +113,7 @@ class AppPickerActivity : AppCompatActivity() {
         }).attachToRecyclerView(rv)
 
         lifecycleScope.launch {
-            try {
-                all = catalog.load(true)
-            } catch (e: Exception) {
-                loadError = e.javaClass.simpleName + ": " + (e.message ?: "")
-            }
+            all = catalog.load(true)
             loaded = true
             refresh()
         }
@@ -147,12 +141,7 @@ class AppPickerActivity : AppCompatActivity() {
         adapter.items = rows.toMutableList()
         adapter.notifyDataSetChanged()
         empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
-        empty.text = when {
-            pinnedMode -> "Nothing pinned yet. Browse apps and tap Pin."
-            loadError != null -> "Could not load apps: $loadError"
-            all.isEmpty() -> "Android returned 0 launchable apps. Your phone may be hiding the app list from EdgeTaskbar. Check Settings > Apps > EdgeTaskbar > Permissions for an installed-apps/app-list permission."
-            else -> getString(R.string.no_results)
-        }
+        empty.text = if (pinnedMode) "Nothing pinned yet. Browse apps and tap Pin." else getString(R.string.no_results)
     }
 
     private inner class RowAdapter : RecyclerView.Adapter<RowAdapter.VH>() {
@@ -172,7 +161,6 @@ class AppPickerActivity : AppCompatActivity() {
             val icon = ImageView(ctx).apply { layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)) }
             val label = TextView(ctx).apply {
                 textSize = 16f
-                setTextColor(ctx.themeColor(com.google.android.material.R.attr.colorOnSurface, android.graphics.Color.BLACK))
                 setPadding(dp(14), 0, dp(8), 0)
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }

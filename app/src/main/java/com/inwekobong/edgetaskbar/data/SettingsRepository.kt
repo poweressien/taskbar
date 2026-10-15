@@ -35,6 +35,9 @@ class SettingsRepository private constructor(private val store: DataStore<Prefer
         val startOnBoot = booleanPreferencesKey("start_on_boot")
         val handleOffset = floatPreferencesKey("handle_offset")
         val hidden = booleanPreferencesKey("temp_hidden")
+        val pinnedBar = booleanPreferencesKey("pinned_bar")
+        val navTop = booleanPreferencesKey("nav_top")
+        val windowMode = stringPreferencesKey("window_mode")
         val pinned = stringPreferencesKey("pinned") // newline-separated package names, in order
         val recents = stringPreferencesKey("recents") // newline-separated, newest first
     }
@@ -58,6 +61,9 @@ class SettingsRepository private constructor(private val store: DataStore<Prefer
             startOnBoot = p[K.startOnBoot] ?: false,
             handleOffsetFraction = p[K.handleOffset] ?: 0.5f,
             temporarilyHidden = p[K.hidden] ?: false,
+            pinnedBar = p[K.pinnedBar] ?: true,
+            navTop = p[K.navTop] ?: false,
+            windowMode = p[K.windowMode].toEnum(WindowMode.FULL),
         ).sanitized()
     }
 
@@ -86,6 +92,9 @@ class SettingsRepository private constructor(private val store: DataStore<Prefer
             p[K.startOnBoot] = next.startOnBoot
             p[K.handleOffset] = next.handleOffsetFraction
             p[K.hidden] = next.temporarilyHidden
+            p[K.pinnedBar] = next.pinnedBar
+            p[K.navTop] = next.navTop
+            p[K.windowMode] = next.windowMode.name
         }
     }
 

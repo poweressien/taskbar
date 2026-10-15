@@ -20,6 +20,13 @@ This code was written without an Android SDK available, so it has **not been com
 - `boot/BootReceiver` opt-in start after reboot; posts a notification if blocked.
 - `ui/` onboarding/permission, settings, app picker (search, pin/unpin, drag reorder, swipe to unpin). Views are built in code rather than XML.
 
+## Bottom bar, top nav buttons, home screen, windows
+- **Pinned bar** (Settings, on by default): full-width dock fixed above the bottom inset, always expanded, never collapses.
+- **Top nav buttons** (Back/Home/Recents): drawn and performed by `NavAccessibilityService`. It reads no screen content. Enable it in Accessibility settings (Android 13+ sideloads: App info > menu > Allow restricted settings).
+- **Home screen**: `HomeActivity` is an optional launcher. Pick it via Settings > Set as home app. It shows your wallpaper and an app grid clear of both bars.
+- **Windows**: dock button cycles Full / Split / Quad / Free-form. Apps launch into slots using launch bounds; Android draws, drags and resizes the windows. Needs multi-window support (free-form usually needs developer options). Apps that disable resizing open full screen.
+- Android cannot hide or move its own nav bar: use Gestures navigation for a clean bottom edge. Apps are not resized around the bars, only windows launched by EdgeTaskbar respect them.
+
 ## Known limits
 - Android cannot make other apps resize around the dock; it floats above them.
 - Keyboard detection from an overlay is best effort and may not fire on some devices/IMEs.

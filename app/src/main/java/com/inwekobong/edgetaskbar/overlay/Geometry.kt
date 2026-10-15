@@ -7,7 +7,9 @@ import android.os.Build
 import android.util.DisplayMetrics
 import android.view.WindowInsets
 import android.view.WindowManager
+import com.inwekobong.edgetaskbar.data.TaskbarSettings
 import com.inwekobong.edgetaskbar.data.ThemeMode
+import com.inwekobong.edgetaskbar.windows.IntRect
 import kotlin.math.max
 
 fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
@@ -51,6 +53,14 @@ object Geometry {
             dm.widthPixels - if (landscape) nav else 0,
             dm.heightPixels - if (landscape) 0 else nav
         )
+    }
+
+    /** Area new windows may occupy: usable screen minus the pinned bottom bar and top nav bar. */
+    fun windowArea(ctx: Context, wm: WindowManager, s: TaskbarSettings): IntRect {
+        val r = usableRect(ctx, wm)
+        val top = r.top + if (s.navTop) ctx.dp(44) else 0
+        val bottom = r.bottom - if (s.pinnedBar) ctx.dp(s.iconSizeDp + 2 * s.paddingDp + 16) else 0
+        return IntRect(r.left, top, r.right, max(top + 1, bottom))
     }
 
     fun isDark(ctx: Context, mode: ThemeMode): Boolean = when (mode) {

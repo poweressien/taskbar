@@ -9,6 +9,13 @@ enum class DockEdge { TOP, BOTTOM, LEFT, RIGHT;
 enum class DockAlign { START, CENTER, END }
 enum class ThemeMode { FOLLOW_SYSTEM, LIGHT, DARK }
 
+enum class WindowMode(val label: String, val glyph: String) {
+    FULL("Full screen", "□"),
+    SPLIT("Split (2 windows)", "◫"),
+    QUAD("Quad (4 windows)", "⊞"),
+    FREEFORM("Free-form (draggable)", "❐"),
+}
+
 data class TaskbarSettings(
     val enabled: Boolean = false,
     val edge: DockEdge = DockEdge.BOTTOM,
@@ -27,6 +34,9 @@ data class TaskbarSettings(
     val startOnBoot: Boolean = false,
     val handleOffsetFraction: Float = 0.5f, // position along the edge, 0..1
     val temporarilyHidden: Boolean = false,
+    val pinnedBar: Boolean = true, // always-expanded full-width bar fixed to the bottom
+    val navTop: Boolean = false, // Back/Home/Recents buttons at the top (needs accessibility service)
+    val windowMode: WindowMode = WindowMode.FULL,
 ) {
     fun sanitized() = copy(
         iconSizeDp = iconSizeDp.coerceIn(24, 64),
