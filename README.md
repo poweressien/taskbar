@@ -27,3 +27,4 @@ This code was written without an Android SDK available, so it has **not been com
 - Auto-start after reboot may be blocked by OEM firmware; `specialUse` foreground services need a Play Console declaration if published.
 - Pre-API-30 inset handling is approximate.
 # taskbar
+# taskbar
