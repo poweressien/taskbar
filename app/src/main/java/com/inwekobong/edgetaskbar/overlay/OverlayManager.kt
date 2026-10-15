@@ -144,7 +144,7 @@ class OverlayManager(
         val s = settings
         val dark = Geometry.isDark(ctx, s.theme)
         val horizontal = s.edge.isHorizontal
-        val thick = ctx.dp(24)
+        val thick = ctx.dp(32)
         val length = ctx.dp(s.handleLengthDp)
         val w = if (horizontal) length else thick
         val h = if (horizontal) thick else length

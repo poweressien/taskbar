@@ -102,7 +102,7 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(android.content.Intent(this, AppPickerActivity::class.java))
         })
 
-        setContentView(ScrollView(this).apply { addView(col) })
+        setContentView(ScrollView(this).apply { addView(col); fitSystemBars() })
     }
 
     private fun radioGroup(labels: List<String>, checked: Int, onPick: (Int) -> Unit): RadioGroup =

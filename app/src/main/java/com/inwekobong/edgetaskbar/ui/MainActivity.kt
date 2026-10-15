@@ -73,7 +73,7 @@ class MainActivity : AppCompatActivity() {
                 "apps, so keep it collapsed when you need the whole screen.", 12f
         ).apply { setPadding(0, dp(16), 0, 0) })
 
-        setContentView(ScrollView(this).apply { addView(col) })
+        setContentView(ScrollView(this).apply { addView(col); fitSystemBars() })
 
         lifecycleScope.launch {
             repo.settings.collect { s -> enabled = s.enabled; render() }

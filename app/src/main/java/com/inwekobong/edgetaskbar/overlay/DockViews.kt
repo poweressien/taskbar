@@ -53,8 +53,8 @@ class HandleView(
     init {
         val pill = View(ctx)
         pill.background = roundedBg(pillColor, ctx.dpf(3f), ctx.dp(1), strokeColor)
-        val thin = ctx.dp(5)
-        val lp = if (horizontalEdge) LayoutParams(ctx.dp(36), thin) else LayoutParams(thin, ctx.dp(36))
+        val thin = ctx.dp(8)
+        val lp = if (horizontalEdge) LayoutParams(ctx.dp(48), thin) else LayoutParams(thin, ctx.dp(48))
         lp.gravity = Gravity.CENTER
         addView(pill, lp)
         contentDescription = "Open taskbar"

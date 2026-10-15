@@ -23,7 +23,25 @@ fun Context.text(s: String, sp: Float = 15f, bold: Boolean = false, color: Int? 
     text = s
     setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
     if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
-    if (color != null) setTextColor(color)
+    setTextColor(color ?: context.themeColor(com.google.android.material.R.attr.colorOnSurface, Color.BLACK))
+}
+
+fun Context.themeColor(attr: Int, fallback: Int): Int =
+    com.google.android.material.color.MaterialColors.getColor(this, attr, fallback)
+
+/** targetSdk 35+ draws edge-to-edge: pad for system bars and paint an explicit surface colour. */
+fun View.fitSystemBars() {
+    setBackgroundColor(context.themeColor(com.google.android.material.R.attr.colorSurface, Color.WHITE))
+    (this as? ViewGroup)?.clipToPadding = false
+    val l = paddingLeft; val t = paddingTop; val r = paddingRight; val b = paddingBottom
+    androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
+        val bars = insets.getInsets(
+            androidx.core.view.WindowInsetsCompat.Type.systemBars() or
+                androidx.core.view.WindowInsetsCompat.Type.displayCutout()
+        )
+        v.setPadding(l + bars.left, t + bars.top, r + bars.right, b + bars.bottom)
+        insets
+    }
 }
 
 fun Context.header(s: String) = text(s, 13f, true, 0xFF0067C0.toInt()).apply {
