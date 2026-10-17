@@ -13,8 +13,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "edge_taskbar")
+private val Context.edgeDataStore: DataStore<Preferences> by preferencesDataStore(name = "edge_taskbar")
 
+/** Single source of truth for settings, pinned apps and recents. All data stays on the device. */
 class SettingsRepository private constructor(private val store: DataStore<Preferences>) {
 
     private object K {
@@ -40,41 +41,20 @@ class SettingsRepository private constructor(private val store: DataStore<Prefer
         val windowMode = stringPreferencesKey("window_mode")
         val pinned = stringPreferencesKey("pinned") // newline-separated package names, in order
         val recents = stringPreferencesKey("recents") // newline-separated, newest first
+        val seeded = booleanPreferencesKey("seeded")
     }
 
-    val settings: Flow<TaskbarSettings> = store.data.map { p ->
-        TaskbarSettings(
-            enabled = p[K.enabled] ?: false,
-            edge = p[K.edge].toEnum(DockEdge.BOTTOM),
-            align = p[K.align].toEnum(DockAlign.CENTER),
-            iconSizeDp = p[K.iconSize] ?: 44,
-            spacingDp = p[K.spacing] ?: 8,
-            paddingDp = p[K.padding] ?: 10,
-            cornerRadiusDp = p[K.radius] ?: 20,
-            handleLengthDp = p[K.handleLen] ?: 56,
-            maxVisibleIcons = p[K.maxIcons] ?: 6,
-            opacityPercent = p[K.opacity] ?: 85,
-            theme = p[K.theme].toEnum(ThemeMode.FOLLOW_SYSTEM),
-            collapseAfterLaunch = p[K.collapseAfterLaunch] ?: true,
-            autoCollapseSeconds = p[K.autoCollapse] ?: 0,
-            hideOnKeyboard = p[K.hideOnKeyboard] ?: true,
-            startOnBoot = p[K.startOnBoot] ?: false,
-            handleOffsetFraction = p[K.handleOffset] ?: 0.5f,
-            temporarilyHidden = p[K.hidden] ?: false,
-            pinnedBar = p[K.pinnedBar] ?: true,
-            navTop = p[K.navTop] ?: false,
-            windowMode = p[K.windowMode].toEnum(WindowMode.FULL),
-        ).sanitized()
-    }
+    val settings: Flow<TaskbarSettings> = store.data.map { read(it) }
 
-    val pinned: Flow<List<String>> = store.data.map { it[K.pinned].toList() }
-    val recents: Flow<List<String>> = store.data.map { it[K.recents].toList() }
+    val pinned: Flow<List<String>> = store.data.map { ListOps.decode(it[K.pinned]) }
+    val recents: Flow<List<String>> = store.data.map { ListOps.decode(it[K.recents]) }
 
     suspend fun current(): TaskbarSettings = settings.first()
 
+    /** Atomically reads, transforms, clamps and saves the settings. */
     suspend fun update(transform: (TaskbarSettings) -> TaskbarSettings) {
-        val next = transform(current()).sanitized()
         store.edit { p ->
+            val next = transform(read(p)).sanitized()
             p[K.enabled] = next.enabled
             p[K.edge] = next.edge.name
             p[K.align] = next.align.name
@@ -98,42 +78,92 @@ class SettingsRepository private constructor(private val store: DataStore<Prefer
         }
     }
 
+    private fun read(p: Preferences): TaskbarSettings = TaskbarSettings(
+        enabled = p[K.enabled] ?: false,
+        edge = enumOrDefault(p[K.edge], DockEdge.BOTTOM),
+        align = enumOrDefault(p[K.align], DockAlign.CENTER),
+        iconSizeDp = p[K.iconSize] ?: 44,
+        spacingDp = p[K.spacing] ?: 8,
+        paddingDp = p[K.padding] ?: 10,
+        cornerRadiusDp = p[K.radius] ?: 20,
+        handleLengthDp = p[K.handleLen] ?: 56,
+        maxVisibleIcons = p[K.maxIcons] ?: 6,
+        opacityPercent = p[K.opacity] ?: 85,
+        theme = enumOrDefault(p[K.theme], ThemeMode.FOLLOW_SYSTEM),
+        collapseAfterLaunch = p[K.collapseAfterLaunch] ?: true,
+        autoCollapseSeconds = p[K.autoCollapse] ?: 0,
+        hideOnKeyboard = p[K.hideOnKeyboard] ?: true,
+        startOnBoot = p[K.startOnBoot] ?: false,
+        handleOffsetFraction = p[K.handleOffset] ?: 0.5f,
+        temporarilyHidden = p[K.hidden] ?: false,
+        pinnedBar = p[K.pinnedBar] ?: true,
+        navTop = p[K.navTop] ?: false,
+        windowMode = enumOrDefault(p[K.windowMode], WindowMode.FULL),
+    ).sanitized()
+
+    // ---- pinned apps --------------------------------------------------------------------
+
     suspend fun setPinned(list: List<String>) {
-        store.edit { it[K.pinned] = list.distinct().joinToString("\n") }
+        store.edit { it[K.pinned] = ListOps.encode(list) }
     }
 
     suspend fun pin(pkg: String) {
-        val cur = pinned.first()
-        if (pkg !in cur) setPinned(cur + pkg)
+        store.edit { p -> p[K.pinned] = ListOps.encode(ListOps.pin(ListOps.decode(p[K.pinned]), pkg)) }
     }
 
-    suspend fun unpin(pkg: String) = setPinned(pinned.first() - pkg)
+    suspend fun pinAt(index: Int, pkg: String) {
+        store.edit { p -> p[K.pinned] = ListOps.encode(ListOps.insert(ListOps.decode(p[K.pinned]), index, pkg)) }
+    }
 
-    suspend fun addRecent(pkg: String, limit: Int = 12) {
-        val cur = recents.first()
-        if (cur.firstOrNull() == pkg) return // no duplicate consecutive entries
-        store.edit { it[K.recents] = (listOf(pkg) + cur.filter { p -> p != pkg }).take(limit).joinToString("\n") }
+    suspend fun unpin(pkg: String) {
+        store.edit { p -> p[K.pinned] = ListOps.encode(ListOps.unpin(ListOps.decode(p[K.pinned]), pkg)) }
+    }
+
+    /** Removes pins whose package is not in [valid]. Returns how many were removed. */
+    suspend fun retainPinned(valid: Set<String>): Int {
+        var removed = 0
+        store.edit { p ->
+            val cur = ListOps.decode(p[K.pinned])
+            val kept = ListOps.keepValid(cur, valid)
+            removed = cur.size - kept.size
+            if (removed > 0) p[K.pinned] = ListOps.encode(kept)
+        }
+        return removed
+    }
+
+    /** First run only: pins [candidates] if nothing is pinned yet so the bar is not empty. */
+    suspend fun seedPinnedOnce(candidates: List<String>) {
+        store.edit { p ->
+            if (p[K.seeded] != true) {
+                p[K.seeded] = true
+                if (ListOps.decode(p[K.pinned]).isEmpty()) p[K.pinned] = ListOps.encode(candidates)
+            }
+        }
+    }
+
+    // ---- recents ------------------------------------------------------------------------
+
+    suspend fun addRecent(pkg: String) {
+        store.edit { p -> p[K.recents] = ListOps.encode(ListOps.addRecent(ListOps.decode(p[K.recents]), pkg)) }
     }
 
     suspend fun removeRecent(pkg: String) {
-        store.edit { it[K.recents] = recents.first().filter { p -> p != pkg }.joinToString("\n") }
+        store.edit { p -> p[K.recents] = ListOps.encode(ListOps.unpin(ListOps.decode(p[K.recents]), pkg)) }
     }
 
     suspend fun clearRecents() {
         store.edit { it[K.recents] = "" }
     }
 
-    private fun String?.toList(): List<String> =
-        this?.split('\n')?.filter { it.isNotBlank() } ?: emptyList()
-
-    private inline fun <reified T : Enum<T>> String?.toEnum(default: T): T =
-        enumValues<T>().firstOrNull { it.name == this } ?: default
+    private inline fun <reified T : Enum<T>> enumOrDefault(name: String?, default: T): T =
+        enumValues<T>().firstOrNull { it.name == name } ?: default
 
     companion object {
         @Volatile private var instance: SettingsRepository? = null
+
         fun get(context: Context): SettingsRepository =
             instance ?: synchronized(this) {
-                instance ?: SettingsRepository(context.applicationContext.dataStore).also { instance = it }
+                instance ?: SettingsRepository(context.applicationContext.edgeDataStore).also { instance = it }
             }
     }
 }

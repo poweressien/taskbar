@@ -1,30 +1,151 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">EdgeTaskbar</string>
+    <string name="tagline">A Windows-style taskbar for your Android phone</string>
+
+    <!-- Main screen -->
+    <string name="status_perm_title">Permission needed</string>
+    <string name="status_perm_detail">Allow EdgeTaskbar to display over other apps so the taskbar can appear.</string>
+    <string name="status_on_title">Taskbar is running</string>
+    <string name="status_on_detail">Your taskbar is showing above your apps.</string>
+    <string name="status_off_title">Taskbar is off</string>
+    <string name="status_off_detail">Start it to show your taskbar.</string>
+    <string name="btn_grant">Grant overlay permission</string>
+    <string name="btn_start">Start taskbar</string>
+    <string name="btn_stop">Stop taskbar</string>
+    <string name="btn_choose_apps">Choose apps</string>
+    <string name="btn_settings">Settings</string>
+    <string name="section_setup">Setup</string>
+    <string name="section_customize">Customize</string>
+
+    <string name="check_overlay_title">Display over other apps</string>
+    <string name="check_overlay_ok">Allowed</string>
+    <string name="check_overlay_missing">Required. Lets the taskbar float above other apps.</string>
+    <string name="check_notif_title">Notifications</string>
+    <string name="check_notif_ok">Allowed</string>
+    <string name="check_notif_missing">Recommended. Shows the running notification with Stop and Hide buttons.</string>
+    <string name="check_notif_na">Not needed on this Android version</string>
+    <string name="check_pins_title">Pinned apps</string>
+    <string name="check_pins_count">%1$d pinned</string>
+    <string name="check_pins_none">None yet. Choose the apps for your taskbar.</string>
+    <string name="check_nav_title">Back / Home / Recents at the top</string>
+    <string name="check_nav_ok">Active</string>
+    <string name="check_nav_off">Optional. Needs the accessibility service. It only presses those three buttons and cannot read your screen.</string>
+    <string name="check_home_title">Home screen</string>
+    <string name="check_home_ok">EdgeTaskbar is your home app</string>
+    <string name="check_home_off">Optional. Use EdgeTaskbar as your home screen.</string>
+    <string name="action_allow">Allow</string>
+    <string name="action_grant">Grant</string>
+    <string name="action_choose">Choose</string>
+    <string name="action_enable">Enable</string>
+    <string name="action_set">Set</string>
+    <string name="action_open">Open</string>
+    <string name="action_run">Run</string>
+    <string name="note_limits">Android does not let an app resize other apps around a dock, so the taskbar floats above them. Use the minimize button on the bar when you need the whole screen.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="sec_mode">Taskbar mode</string>
+    <string name="mode_pinned_title">Pin to bottom</string>
+    <string name="mode_pinned_sub">A full-width bar that stays at the bottom. Turn off for a floating dock on any edge.</string>
+    <string name="mode_position_title">Dock edge</string>
+    <string name="mode_align_title">Alignment (top and bottom)</string>
+    <string name="align_start">Left</string>
+    <string name="align_center">Center</string>
+    <string name="align_end">Right</string>
+    <string name="edge_top">Top</string>
+    <string name="edge_bottom">Bottom</string>
+    <string name="edge_left">Left</string>
+    <string name="edge_right">Right</string>
+    <string name="mode_handle_title">Handle length</string>
+    <string name="sec_icons">Icons</string>
+    <string name="icon_size_title">Icon size</string>
+    <string name="icon_spacing_title">Icon spacing</string>
+    <string name="icon_count_title">Icons per page</string>
+    <string name="sec_look">Appearance</string>
+    <string name="look_opacity_title">Background opacity</string>
+    <string name="look_radius_title">Corner radius</string>
+    <string name="look_padding_title">Dock padding</string>
+    <string name="look_theme_title">Taskbar theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="sec_windows">Windows</string>
+    <string name="win_layout_title">Layout for launched apps</string>
+    <string name="win_full">Full</string>
+    <string name="win_split">Split</string>
+    <string name="win_quad">Quad</string>
+    <string name="win_free">Free</string>
+    <string name="win_note_supported">This device reports free-form window support. Android draws and moves the windows: drag the title bar, resize the edges.</string>
+    <string name="win_note_unsupported">This device does not report free-form window support. Split and Quad may still work; Free may open full screen. Apps that block resizing always open full screen. Each app decides whether its audio keeps playing.</string>
+    <string name="win_dev_title">Developer options</string>
+    <string name="win_dev_sub">Turn on free-form windows and force resizable activities, then reboot.</string>
+    <string name="sec_behavior">Behavior</string>
+    <string name="beh_collapse_launch">Collapse after launching an app</string>
+    <string name="beh_autocollapse_title">Auto-collapse after (0 = never)</string>
+    <string name="beh_keyboard_title">Hide while the keyboard is open</string>
+    <string name="beh_keyboard_sub">Best effort. Some keyboards cannot be detected from an overlay; use the minimize button then.</string>
+    <string name="beh_boot_title">Start taskbar after reboot</string>
+    <string name="beh_boot_sub">Some phone makers block this. You will get a notification if it is blocked.</string>
+    <string name="sec_system">System</string>
+    <string name="sys_nav_title">Back / Home / Recents at the top</string>
+    <string name="sys_nav_sub">Uses the accessibility service. On Android 13+, you may first need App info, menu, Allow restricted settings.</string>
+    <string name="sys_home_title">Use as home screen</string>
+    <string name="sys_home_sub">Switch your system navigation to Gestures for a clean bottom edge.</string>
+    <string name="sys_battery_title">Keep it running</string>
+    <string name="sys_battery_sub">On Xiaomi, Oppo, Vivo or Tecno set Battery to No restrictions and allow pop-up windows while running in the background.</string>
+    <string name="sec_maintenance">Maintenance</string>
+    <string name="maint_clear_title">Clear recent apps</string>
+    <string name="maint_clear_sub">Recents only show apps launched from this taskbar.</string>
+    <string name="maint_cleanup_title">Remove uninstalled pins</string>
+    <string name="maint_cleanup_sub">Unpins apps that are no longer installed.</string>
+    <string name="toast_cleared">Recent apps cleared</string>
+    <string name="toast_removed_stale">Removed %1$d pin(s)</string>
+    <string name="toast_unavailable">Not available on this device</string>
+    <string name="toast_enable_accessibility">Turn on EdgeTaskbar in Accessibility settings</string>
+
+    <!-- App picker -->
+    <string name="picker_title">Pinned apps</string>
+    <string name="picker_search_hint">Search apps</string>
+    <string name="picker_all">All apps</string>
+    <string name="picker_pinned">Pinned (%1$d)</string>
+    <string name="picker_empty_search">No apps match your search</string>
+    <string name="picker_empty_pinned">Nothing pinned yet. Go to All apps and tap Pin.</string>
+    <string name="picker_unavailable">Not available</string>
+    <string name="action_pin">Pin</string>
+    <string name="action_unpin">Unpin</string>
+    <string name="snack_unpinned">Unpinned %1$s</string>
+    <string name="snack_undo">Undo</string>
+    <string name="drag_handle_desc">Drag to reorder</string>
+
+    <!-- Home -->
+    <string name="home_search_hint">Search apps</string>
+    <string name="home_perm_hint">Tap to allow the taskbar to show</string>
+    <string name="home_menu_info">App info</string>
+    <string name="home_menu_pin">Pin to taskbar</string>
+    <string name="home_menu_unpin">Unpin from taskbar</string>
+
+    <!-- Overlay -->
+    <string name="dock_hide_desc">Hide taskbar</string>
+    <string name="dock_minimize_desc">Minimize taskbar</string>
+    <string name="dock_open_desc">Open taskbar</string>
+    <string name="dock_layout_desc">Window layout: %1$s. Tap to change.</string>
+    <string name="dock_pin_apps_desc">Pin apps</string>
+    <string name="nav_back">Back</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_recents">Recent apps</string>
+    <string name="overlay_error">Taskbar error: %1$s</string>
+
+    <!-- Service, notifications -->
     <string name="notif_channel">Taskbar service</string>
     <string name="notif_title">EdgeTaskbar is running</string>
     <string name="notif_text">Tap to open settings</string>
     <string name="notif_stop">Stop</string>
     <string name="notif_hide">Hide</string>
-    <string name="perm_title">Display over other apps</string>
-    <string name="perm_body">EdgeTaskbar draws a small dock above other apps so you can launch pinned apps from anywhere. Android requires you to grant this yourself in system settings. EdgeTaskbar cannot resize other apps; the dock simply floats above them, so keep it collapsed when you need the full screen.</string>
-    <string name="perm_grant">Open permission settings</string>
-    <string name="perm_denied">Permission is still off. Enable \"Allow display over other apps\" for EdgeTaskbar, then come back.</string>
-    <string name="notif_perm_body">Notifications: Android 13+ needs this permission to show the taskbar\'s running notification. The dock still works if you deny it, but the notification may be hidden.</string>
-    <string name="start_taskbar">Start taskbar</string>
-    <string name="stop_taskbar">Stop taskbar</string>
-    <string name="open_settings">Settings</string>
-    <string name="pick_apps">Choose pinned apps</string>
-    <string name="search_hint">Search apps</string>
-    <string name="no_results">No apps match your search</string>
-    <string name="loading">Loading apps…</string>
-    <string name="launch_failed">Cannot open this app</string>
-    <string name="recent_label">Recent (launched from this dock)</string>
+    <string name="notif_show">Show</string>
+    <string name="boot_channel">Startup</string>
     <string name="boot_blocked_title">EdgeTaskbar could not start</string>
     <string name="boot_blocked_text">Tap to start the taskbar manually</string>
-    <string name="app_info">App info</string>
-    <string name="clear_recents">Clear recent apps</string>
-    <string name="cleanup_stale">Remove uninstalled pins</string>
-    <string name="a11y_desc">Shows Back, Home and Recents buttons at the top of the screen and performs those actions when tapped. EdgeTaskbar does not read or record anything on your screen.</string>
-    <string name="not_launchable">Pinned apps must have a launchable screen</string>
+    <string name="launch_failed">Cannot open this app</string>
+    <string name="a11y_desc">Shows Back, Home and Recents buttons at the top of the screen and presses them when tapped. EdgeTaskbar does not read or record anything on your screen.</string>
 </resources>

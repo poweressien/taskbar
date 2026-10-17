@@ -13,30 +13,35 @@ import com.inwekobong.edgetaskbar.windows.IntRect
 import kotlin.math.max
 
 fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
+
 fun Context.dpf(v: Float): Float = v * resources.displayMetrics.density
 
 object Geometry {
 
     /**
-     * Usable screen rectangle in screen coordinates, excluding system bars, display cutouts and
-     * (horizontally) system gesture zones, so the dock never sits where it cannot be tapped.
-     * Recomputed on every layout pass; nothing is hardcoded per device.
+     * Usable screen rectangle in screen coordinates: excludes system bars and display cutouts and,
+     * on the left/right, the system gesture zones. Recomputed whenever it is needed, so rotation,
+     * folding and multi-window size changes are picked up. Nothing is hardcoded per phone.
      */
     @Suppress("DEPRECATION")
     fun usableRect(ctx: Context, wm: WindowManager): Rect {
         if (Build.VERSION.SDK_INT >= 30) {
-            val m = wm.currentWindowMetrics
-            val b = m.bounds
-            val ins = m.windowInsets.getInsetsIgnoringVisibility(
-                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
-            )
-            val g = m.windowInsets.getInsets(WindowInsets.Type.systemGestures())
-            return Rect(
-                b.left + max(ins.left, g.left),
-                b.top + ins.top,
-                b.right - max(ins.right, g.right),
-                b.bottom - ins.bottom
-            )
+            try {
+                val m = wm.currentWindowMetrics
+                val b = m.bounds
+                val bars = m.windowInsets.getInsetsIgnoringVisibility(
+                    WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
+                )
+                val gest = m.windowInsets.getInsets(WindowInsets.Type.systemGestures())
+                return Rect(
+                    b.left + max(bars.left, gest.left),
+                    b.top + bars.top,
+                    b.right - max(bars.right, gest.right),
+                    b.bottom - bars.bottom
+                )
+            } catch (_: Exception) {
+                // fall through to the metrics-based estimate below
+            }
         }
         val dm = DisplayMetrics()
         wm.defaultDisplay.getRealMetrics(dm)
@@ -45,11 +50,11 @@ object Geometry {
             val id = res.getIdentifier(name, "dimen", "android")
             return if (id > 0) res.getDimensionPixelSize(id) else 0
         }
-        val status = dimen("status_bar_height")
-        val nav = dimen("navigation_bar_height")
         val landscape = dm.widthPixels > dm.heightPixels
+        val nav = dimen("navigation_bar_height")
         return Rect(
-            0, status,
+            0,
+            dimen("status_bar_height"),
             dm.widthPixels - if (landscape) nav else 0,
             dm.heightPixels - if (landscape) 0 else nav
         )

@@ -1,35 +1,21 @@
 # EdgeTaskbar
 
-Native Android (Kotlin) floating dock inspired by the Windows 11 taskbar. Package `com.inwekobong.edgetaskbar`, minSdk 26, target/compile 36.
+A Windows 11-style taskbar for Android (Kotlin). Pinned bar at the bottom, optional Back/Home/Recents at the top,
+floating dock on any edge, launch apps into split/quad/free windows. No backend, no analytics.
 
 ## Build
-1. Open this folder in Android Studio (Ladybug or newer). It will create the Gradle wrapper and sync.
-   - Or from a terminal with Gradle 8.11+ and an SDK: copy `local.properties.example` to `local.properties`, set `sdk.dir`, run `gradle assembleDebug`.
-2. APK: `app/build/outputs/apk/debug/app-debug.apk`.
-3. Unit tests: `gradle testDebugUnitTest`.
+Push to GitHub: Actions builds `EdgeTaskbar-debug-apk` (Actions tab, latest run, Artifacts). Or open in Android Studio.
 
-Versions: AGP 8.9.1, Kotlin 2.0.21, DataStore 1.1.1.
+## Setup on the phone
+1. Open the app, tap **Grant overlay permission**, allow it, go back, tap **Start taskbar**.
+2. **Choose apps** to pin. Swipe the icons to page; minimize button collapses the bar to a handle.
+3. Optional: Back/Home/Recents at the top needs the Accessibility service (Android 13+ sideload: App info, menu, Allow restricted settings).
+4. Optional: set EdgeTaskbar as home app.
+5. Xiaomi/Oppo/Vivo/Tecno: set Battery to No restrictions and allow pop-up windows from background.
 
-## Not yet verified
-This code was written without an Android SDK available, so it has **not been compiled or run**. Expect to fix a few compile errors on first sync, and test on your phone: overlay placement/insets, handle drag, outside-tap collapse, boot start, and keyboard detection.
-
-## Architecture
-- `data/` DataStore settings + pinned/recent lists (package names, ordered), `AppCatalog` (PackageManager, cached, launcher `<queries>`, no QUERY_ALL_PACKAGES).
-- `overlay/OverlayManager` owns the windows: small handle, dock (ACTION_OUTSIDE collapses), 1px non-touchable keyboard probe. No full-screen touch interceptor.
-- `overlay/OverlayService` foreground service (`specialUse`, with Stop and Hide/Show notification actions). Idempotent start/stop, stops itself when overlay permission is revoked.
-- `boot/BootReceiver` opt-in start after reboot; posts a notification if blocked.
-- `ui/` onboarding/permission, settings, app picker (search, pin/unpin, drag reorder, swipe to unpin). Views are built in code rather than XML.
-
-## Bottom bar, top nav buttons, home screen, windows
-- **Pinned bar** (Settings, on by default): full-width dock fixed above the bottom inset, always expanded, never collapses.
-- **Top nav buttons** (Back/Home/Recents): drawn and performed by `NavAccessibilityService`. It reads no screen content. Enable it in Accessibility settings (Android 13+ sideloads: App info > menu > Allow restricted settings).
-- **Home screen**: `HomeActivity` is an optional launcher. Pick it via Settings > Set as home app. It shows your wallpaper and an app grid clear of both bars.
-- **Windows**: dock button cycles Full / Split / Quad / Free-form. Apps launch into slots using launch bounds; Android draws, drags and resizes the windows. Needs multi-window support (free-form usually needs developer options). Apps that disable resizing open full screen.
-- Android cannot hide or move its own nav bar: use Gestures navigation for a clean bottom edge. Apps are not resized around the bars, only windows launched by EdgeTaskbar respect them.
-
-## Known limits
-- Android cannot make other apps resize around the dock; it floats above them.
-- Keyboard detection from an overlay is best effort and may not fire on some devices/IMEs.
-- Recents show only apps launched from this dock.
-- Auto-start after reboot may be blocked by OEM firmware; `specialUse` foreground services need a Play Console declaration if published.
-- Pre-API-30 inset handling is approximate.
+## Honest limits
+- Android cannot resize other apps around a dock, so the bar floats above them; use minimize when you need the whole screen.
+- The system navigation bar cannot be hidden or moved; use Gesture navigation for a clean bottom edge.
+- Multi-window: Android draws/moves/resizes the windows. Needs free-form support (Developer options); apps that block resizing open full screen. Audio is decided by each app.
+- Keyboard detection from an overlay is best effort.
+- Start-after-reboot may be blocked by the phone maker.

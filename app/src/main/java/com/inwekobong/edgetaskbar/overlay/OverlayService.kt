@@ -11,9 +11,11 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
+import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.IBinder
-import android.provider.Settings
+import android.view.Display
+import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -23,92 +25,68 @@ import com.inwekobong.edgetaskbar.data.SettingsRepository
 import com.inwekobong.edgetaskbar.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-/**
- * Foreground service that owns the overlay. A foreground service is justified because the dock is
- * an ongoing, user-visible feature; the notification offers Stop and Hide/Show actions.
- * Start/stop are idempotent and the service stops itself if overlay permission is lost.
- */
+/** Foreground service that owns the overlay. Stop is always one tap away in the notification. */
 class OverlayService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var repo: SettingsRepository
     private lateinit var catalog: AppCatalog
     private var manager: OverlayManager? = null
-    private var collectJob: Job? = null
-    private var running = false
-    private var hidden = false
+    private var packageReceiver: BroadcastReceiver? = null
+    private var lastHidden: Boolean? = null
 
-    private val packageReceiver = object : BroadcastReceiver() {
-        override fun onReceive(c: Context, i: Intent) {
-            catalog.refresh()
-            scope.launch {
-                catalog.load(true)
-                // Drop pins whose app was uninstalled.
-                val current = repo.pinned.first()
-                val alive = current.filter { catalog.isInstalledLaunchable(it) }
-                if (alive.size != current.size) repo.setPinned(alive)
-            }
-        }
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         repo = SettingsRepository.get(this)
         catalog = AppCatalog.get(this)
-        createChannel()
-    }
+        running = true
+        ensureChannel()
+        goForeground(false)
 
-    override fun onBind(intent: Intent?): IBinder? = null
+        val mgr = OverlayManager(
+            appCtx = applicationContext,
+            windowCtx = createWindowContextCompat(),
+            scope = scope,
+            repo = repo,
+            catalog = catalog,
+            onPermissionLost = { persistDisabledAndStop() },
+        )
+        manager = mgr
+        mgr.start()
+        registerPackageReceiver()
+
+        scope.launch {
+            // A hide from a previous run should not make a fresh start look broken.
+            repo.update { it.copy(temporarilyHidden = false) }
+            val apps = catalog.load(true)
+            repo.seedPinnedOnce(defaultPins(apps.map { it.packageName }))
+            repo.settings.combine(repo.pinned) { s, p -> s to p }
+                .combine(repo.recents) { (s, p), r -> Triple(s, p, r) }
+                .collect { (s, p, r) ->
+                    if (!s.enabled) {
+                        stopSelf()
+                        return@collect
+                    }
+                    if (lastHidden != s.temporarilyHidden) {
+                        lastHidden = s.temporarilyHidden
+                        goForeground(s.temporarilyHidden)
+                    }
+                    mgr.update(s, p, r)
+                }
+        }
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> { shutdown(disable = true); return START_NOT_STICKY }
-            ACTION_TOGGLE_HIDE -> {
-                scope.launch { repo.update { it.copy(temporarilyHidden = !it.temporarilyHidden) } }
-                if (!running) return START_NOT_STICKY
-                return START_STICKY
-            }
-        }
-
-        if (!enterForeground()) { stopSelf(); return START_NOT_STICKY }
-
-        if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
-            shutdown(disable = true)
-            return START_NOT_STICKY
-        }
-        if (running) return START_STICKY // idempotent: never add a second overlay
-        running = true
-
-        scope.launch { repo.update { it.copy(enabled = true) } }
-        val m = OverlayManager(this, scope, repo, catalog) { shutdown(disable = true) }
-        manager = m
-        m.start()
-
-        ContextCompat.registerReceiver(
-            this, packageReceiver,
-            IntentFilter().apply {
-                addAction(Intent.ACTION_PACKAGE_ADDED)
-                addAction(Intent.ACTION_PACKAGE_REMOVED)
-                addAction(Intent.ACTION_PACKAGE_CHANGED)
-                addDataScheme("package")
-            },
-            ContextCompat.RECEIVER_EXPORTED
-        )
-
-        collectJob = scope.launch {
-            catalog.load()
-            combine(repo.settings, repo.pinned, repo.recents) { s, p, r -> Triple(s, p, r) }
-                .collect { (s, p, r) ->
-                    if (s.temporarilyHidden != hidden) { hidden = s.temporarilyHidden; notifyUpdate() }
-                    m.update(s, p, r)
-                }
+            ACTION_STOP -> persistDisabledAndStop()
+            ACTION_TOGGLE_HIDE -> toggleHidden()
         }
         return START_STICKY
     }
@@ -119,81 +97,145 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
-        teardown()
+        running = false
+        manager?.stop()
+        manager = null
+        packageReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) { } }
+        packageReceiver = null
         scope.cancel()
         super.onDestroy()
     }
 
-    // ---- helpers -------------------------------------------------------------------------
+    // ---- actions ------------------------------------------------------------------------
 
-    private fun teardown() {
-        collectJob?.cancel(); collectJob = null
-        manager?.stop(); manager = null
-        if (running) {
-            try { unregisterReceiver(packageReceiver) } catch (_: Exception) { }
+    /** Persists with the process-wide scope: this service's own scope is cancelled in onDestroy. */
+    private fun persistDisabledAndStop() {
+        val r = repo
+        ioScope.launch {
+            r.update { it.copy(enabled = false, temporarilyHidden = false) }
         }
-        running = false
-    }
-
-    private fun shutdown(disable: Boolean) {
-        teardown()
-        if (disable) scope.launch { repo.update { it.copy(enabled = false) } }
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    private fun enterForeground(): Boolean = try {
-        val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
-        ServiceCompat.startForeground(this, NOTIF_ID, buildNotification(), type)
-        true
-    } catch (e: Exception) {
-        // e.g. ForegroundServiceStartNotAllowedException when restarted in a restricted state.
-        false
+    private fun toggleHidden() {
+        val r = repo
+        ioScope.launch { r.update { it.copy(temporarilyHidden = !it.temporarilyHidden) } }
     }
 
-    private fun notifyUpdate() {
-        getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildNotification())
+    // ---- window context -----------------------------------------------------------------
+
+    private fun createWindowContextCompat(): Context {
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                val dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+                val display = dm.getDisplay(Display.DEFAULT_DISPLAY)
+                if (display != null) {
+                    return createDisplayContext(display)
+                        .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null)
+                }
+            } catch (_: Exception) {
+                // fall back to the service context below
+            }
+        }
+        return this
     }
 
-    private fun createChannel() {
+    // ---- package changes ----------------------------------------------------------------
+
+    private fun registerPackageReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addAction(Intent.ACTION_PACKAGE_CHANGED)
+            addDataScheme("package")
+        }
+        val rec = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                scope.launch {
+                    val apps = catalog.load(true)
+                    // Only prune when the catalog is plausibly complete.
+                    if (apps.isNotEmpty()) repo.retainPinned(catalog.validPackages())
+                    manager?.refresh()
+                }
+            }
+        }
+        ContextCompat.registerReceiver(this, rec, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        packageReceiver = rec
+    }
+
+    private fun defaultPins(installed: List<String>): List<String> {
+        val have = installed.toSet()
+        val wanted = listOf(
+            "com.whatsapp",
+            "com.google.android.dialer", "com.android.dialer", "com.samsung.android.dialer", "com.android.contacts",
+            "com.android.chrome",
+            "com.google.android.gm",
+            "com.google.android.apps.photos",
+        )
+        val picked = wanted.filter { it in have }.take(6)
+        return if (picked.isNotEmpty()) picked else installed.take(5)
+    }
+
+    // ---- notification -------------------------------------------------------------------
+
+    private fun ensureChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            val ch = NotificationChannel(CHANNEL, getString(R.string.notif_channel), NotificationManager.IMPORTANCE_LOW)
-            getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL, getString(R.string.notif_channel), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 
-    private fun buildNotification(): Notification {
-        val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), flags)
-        val stop = PendingIntent.getService(
-            this, 1, Intent(this, OverlayService::class.java).setAction(ACTION_STOP), flags)
-        val toggle = PendingIntent.getService(
-            this, 2, Intent(this, OverlayService::class.java).setAction(ACTION_TOGGLE_HIDE), flags)
+    private fun goForeground(hidden: Boolean) {
+        val n = buildNotification(hidden)
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                ServiceCompat.startForeground(this, NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(NOTIF_ID, n)
+            }
+        } catch (_: Exception) {
+            // Without a foreground state Android may stop us later, but the overlay can still run now.
+        }
+    }
+
+    private fun buildNotification(hidden: Boolean): Notification {
+        fun svc(action: String, code: Int): PendingIntent = PendingIntent.getService(
+            this, code, Intent(this, OverlayService::class.java).setAction(action),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val open = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_dock)
+            .setSmallIcon(R.drawable.ic_stat_dock)
             .setContentTitle(getString(R.string.notif_title))
             .setContentText(getString(R.string.notif_text))
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(0, getString(R.string.notif_stop), stop)
-            .addAction(0, if (hidden) "Show" else getString(R.string.notif_hide), toggle)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .addAction(0, getString(if (hidden) R.string.notif_show else R.string.notif_hide), svc(ACTION_TOGGLE_HIDE, 1))
+            .addAction(0, getString(R.string.notif_stop), svc(ACTION_STOP, 2))
             .build()
     }
 
     companion object {
         const val ACTION_STOP = "com.inwekobong.edgetaskbar.STOP"
         const val ACTION_TOGGLE_HIDE = "com.inwekobong.edgetaskbar.TOGGLE_HIDE"
-        private const val CHANNEL = "taskbar"
+        private const val CHANNEL = "taskbar_service"
         private const val NOTIF_ID = 1001
+
+        @Volatile var running = false
+            private set
+
+        private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         fun start(ctx: Context) {
             ContextCompat.startForegroundService(ctx, Intent(ctx, OverlayService::class.java))
-        }
-
-        fun stop(ctx: Context) {
-            ctx.startService(Intent(ctx, OverlayService::class.java).setAction(ACTION_STOP))
         }
     }
 }

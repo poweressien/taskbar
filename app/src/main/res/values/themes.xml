@@ -1,15 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.EdgeTaskbar" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">#0067C0</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimary">@color/et_accent</item>
+        <item name="colorOnPrimary">@color/et_on_accent</item>
+        <item name="colorPrimaryContainer">@color/et_accent_container</item>
+        <item name="colorOnPrimaryContainer">@color/et_on_accent_container</item>
+        <item name="colorSecondaryContainer">@color/et_accent_container</item>
+        <item name="colorOnSecondaryContainer">@color/et_on_accent_container</item>
+        <item name="colorSurface">@color/et_card</item>
+        <item name="colorOnSurface">@color/et_text</item>
+        <item name="colorOnSurfaceVariant">@color/et_text_secondary</item>
+        <item name="colorSurfaceVariant">@color/et_stroke</item>
+        <item name="colorOutline">@color/et_stroke</item>
+        <item name="colorOutlineVariant">@color/et_stroke</item>
+        <item name="colorError">@color/et_err</item>
+        <item name="android:colorBackground">@color/et_bg</item>
+        <item name="android:windowBackground">@color/et_bg</item>
     </style>
 
-    <style name="Theme.EdgeTaskbar.Home" parent="Theme.Material3.DayNight.NoActionBar">
+    <!-- Optional home screen: shows the user's wallpaper behind the app grid. -->
+    <style name="Theme.EdgeTaskbar.Home" parent="Theme.EdgeTaskbar">
         <item name="android:windowShowWallpaper">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowTranslucentStatus">false</item>
     </style>
 </resources>

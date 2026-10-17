@@ -15,27 +15,27 @@ import com.inwekobong.edgetaskbar.overlay.OverlayService
 import com.inwekobong.edgetaskbar.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * Starts the taskbar after reboot only if the user opted in AND overlay permission is still granted.
- * If Android or an OEM blocks the start, a notification lets the user start it manually.
- * Not available before first unlock (credential-protected storage), and some OEMs block auto-start.
+ * Starts the taskbar after a reboot, only if the user turned that on. Some phone makers block
+ * this; if the start is refused we post a tap-to-start notification instead of failing silently.
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        val app = context.applicationContext
         val pending = goAsync()
-        CoroutineScope(Dispatchers.Default).launch {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val s = SettingsRepository.get(context).current()
-                if (!s.startOnBoot) return@launch
-                val canDraw = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(context)
-                if (!canDraw) { notifyBlocked(context); return@launch }
-                try {
-                    OverlayService.start(context)
-                } catch (e: Exception) {
-                    notifyBlocked(context)
+                val s = SettingsRepository.get(app).current()
+                if (s.enabled && s.startOnBoot && Settings.canDrawOverlays(app)) {
+                    try {
+                        OverlayService.start(app)
+                    } catch (_: Exception) {
+                        notifyBlocked(app)
+                    }
                 }
             } finally {
                 pending.finish()
@@ -44,16 +44,18 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     private fun notifyBlocked(ctx: Context) {
-        val nm = ctx.getSystemService(NotificationManager::class.java)
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         if (Build.VERSION.SDK_INT >= 26) {
             nm.createNotificationChannel(
-                NotificationChannel("boot", "Startup", NotificationManager.IMPORTANCE_DEFAULT))
+                NotificationChannel("boot", ctx.getString(R.string.boot_channel), NotificationManager.IMPORTANCE_DEFAULT)
+            )
         }
         val open = PendingIntent.getActivity(
-            ctx, 0, Intent(ctx, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            ctx, 0, Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val n = NotificationCompat.Builder(ctx, "boot")
-            .setSmallIcon(R.drawable.ic_dock)
+            .setSmallIcon(R.drawable.ic_stat_dock)
             .setContentTitle(ctx.getString(R.string.boot_blocked_title))
             .setContentText(ctx.getString(R.string.boot_blocked_text))
             .setContentIntent(open)

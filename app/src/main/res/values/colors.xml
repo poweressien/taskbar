@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fluent-inspired palette (light). Dark variants live in values-night. -->
+    <color name="et_accent">#0067C0</color>
+    <color name="et_on_accent">#FFFFFF</color>
+    <color name="et_accent_container">#D6E8FA</color>
+    <color name="et_on_accent_container">#00305A</color>
+    <color name="et_bg">#F3F3F3</color>
+    <color name="et_card">#FFFFFF</color>
+    <color name="et_stroke">#E1E1E1</color>
+    <color name="et_text">#1B1B1B</color>
+    <color name="et_text_secondary">#5F5F5F</color>
+    <color name="et_ok">#0F7B0F</color>
+    <color name="et_warn">#9D5D00</color>
+    <color name="et_err">#C42B1C</color>
+    <color name="et_home_scrim">#66000000</color>
+</resources>

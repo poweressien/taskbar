@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="et_accent">#60CDFF</color>
+    <color name="et_on_accent">#00263D</color>
+    <color name="et_accent_container">#0B3A5C</color>
+    <color name="et_on_accent_container">#CFE9FF</color>
+    <color name="et_bg">#1C1C1C</color>
+    <color name="et_card">#2B2B2B</color>
+    <color name="et_stroke">#3C3C3C</color>
+    <color name="et_text">#F2F2F2</color>
+    <color name="et_text_secondary">#B8B8B8</color>
+    <color name="et_ok">#6CCB5F</color>
+    <color name="et_warn">#F7C948</color>
+    <color name="et_err">#FF99A4</color>
+    <color name="et_home_scrim">#66000000</color>
+</resources>

@@ -2,20 +2,19 @@ package com.inwekobong.edgetaskbar.data
 
 import android.graphics.drawable.Drawable
 
-enum class DockEdge { TOP, BOTTOM, LEFT, RIGHT;
-    val isHorizontal get() = this == TOP || this == BOTTOM
+enum class DockEdge {
+    TOP, BOTTOM, LEFT, RIGHT;
+
+    val isHorizontal: Boolean get() = this == TOP || this == BOTTOM
 }
 
 enum class DockAlign { START, CENTER, END }
+
 enum class ThemeMode { FOLLOW_SYSTEM, LIGHT, DARK }
 
-enum class WindowMode(val label: String, val glyph: String) {
-    FULL("Full screen", "□"),
-    SPLIT("Split (2 windows)", "◫"),
-    QUAD("Quad (4 windows)", "⊞"),
-    FREEFORM("Free-form (draggable)", "❐"),
-}
+enum class WindowMode { FULL, SPLIT, QUAD, FREEFORM }
 
+/** All user-configurable taskbar options. Always pass through [sanitized] before use. */
 data class TaskbarSettings(
     val enabled: Boolean = false,
     val edge: DockEdge = DockEdge.BOTTOM,
@@ -32,23 +31,32 @@ data class TaskbarSettings(
     val autoCollapseSeconds: Int = 0, // 0 = never
     val hideOnKeyboard: Boolean = true,
     val startOnBoot: Boolean = false,
-    val handleOffsetFraction: Float = 0.5f, // position along the edge, 0..1
+    val handleOffsetFraction: Float = 0.5f, // position of the handle along its edge, 0..1
     val temporarilyHidden: Boolean = false,
-    val pinnedBar: Boolean = true, // always-expanded full-width bar fixed to the bottom
-    val navTop: Boolean = false, // Back/Home/Recents buttons at the top (needs accessibility service)
+    val pinnedBar: Boolean = true, // full-width bar fixed to the bottom
+    val navTop: Boolean = false, // Back/Home/Recents buttons at the top (accessibility service)
     val windowMode: WindowMode = WindowMode.FULL,
 ) {
-    fun sanitized() = copy(
-        iconSizeDp = iconSizeDp.coerceIn(24, 64),
+    fun sanitized(): TaskbarSettings = copy(
+        iconSizeDp = iconSizeDp.coerceIn(MIN_ICON, MAX_ICON),
         spacingDp = spacingDp.coerceIn(0, 24),
         paddingDp = paddingDp.coerceIn(4, 24),
         cornerRadiusDp = cornerRadiusDp.coerceIn(0, 32),
         handleLengthDp = handleLengthDp.coerceIn(36, 120),
         maxVisibleIcons = maxVisibleIcons.coerceIn(3, 10),
-        opacityPercent = opacityPercent.coerceIn(30, 100),
+        opacityPercent = opacityPercent.coerceIn(30, 100), // never fully invisible
         autoCollapseSeconds = autoCollapseSeconds.coerceIn(0, 60),
         handleOffsetFraction = handleOffsetFraction.coerceIn(0f, 1f),
     )
+
+    /** The pinned bar always lives at the bottom, centered, whatever edge is saved. */
+    fun effective(): TaskbarSettings =
+        if (pinnedBar) copy(edge = DockEdge.BOTTOM, align = DockAlign.CENTER) else this
+
+    companion object {
+        const val MIN_ICON = 24
+        const val MAX_ICON = 64
+    }
 }
 
 /** A launchable app discovered through PackageManager. */

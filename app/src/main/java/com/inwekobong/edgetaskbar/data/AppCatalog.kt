@@ -2,15 +2,15 @@ package com.inwekobong.edgetaskbar.data
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Discovers launchable apps via the manifest <queries> launcher intent (no QUERY_ALL_PACKAGES).
- * Result is cached in memory; call [refresh] after package changes or on an explicit refresh.
+ * Discovers launchable apps through the launcher-intent <queries> in the manifest (no
+ * QUERY_ALL_PACKAGES). The list is cached in memory; call [refresh] after package changes and
+ * [load] again. Apps Android hides from us (package visibility) simply do not appear.
  */
 class AppCatalog private constructor(private val context: Context) {
 
@@ -18,13 +18,16 @@ class AppCatalog private constructor(private val context: Context) {
     private val byPackage = HashMap<String, AppEntry>()
 
     suspend fun load(force: Boolean = false): List<AppEntry> = withContext(Dispatchers.IO) {
-        if (!force) cache?.let { return@withContext it }
-        refreshInternal()
+        val cached = cache
+        if (!force && cached != null) cached else query()
     }
 
-    fun refresh() { cache = null }
+    /** Marks the cache stale; the next [load] re-queries PackageManager. */
+    fun refresh() {
+        cache = null
+    }
 
-    private fun refreshInternal(): List<AppEntry> {
+    private fun query(): List<AppEntry> {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val infos = pm.queryIntentActivities(intent, 0)
@@ -49,34 +52,27 @@ class AppCatalog private constructor(private val context: Context) {
         return list
     }
 
-    /** Cached lookup; null if app is not (or no longer) launchable/visible. */
+    /** Cached lookup; null if the app is not (or no longer) launchable or visible. */
     fun find(pkg: String): AppEntry? = synchronized(byPackage) { byPackage[pkg] }
 
-    /** Safe launch using the system-provided launch intent. Returns false on any failure. */
-    fun launch(pkg: String): Boolean {
-        return try {
-            val intent = context.packageManager.getLaunchIntentForPackage(pkg) ?: return false
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
+    fun validPackages(): Set<String> = synchronized(byPackage) { byPackage.keys.toSet() }
+
+    fun isLaunchable(pkg: String): Boolean =
+        try { context.packageManager.getLaunchIntentForPackage(pkg) != null } catch (_: Exception) { false }
 
     fun openAppInfo(pkg: String) {
         try {
             val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", pkg, null))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(i)
-        } catch (_: Exception) { }
+        } catch (_: Exception) {
+            // No settings screen available: nothing sensible to do.
+        }
     }
-
-    fun isInstalledLaunchable(pkg: String): Boolean =
-        try { context.packageManager.getLaunchIntentForPackage(pkg) != null } catch (_: Exception) { false }
 
     companion object {
         @Volatile private var instance: AppCatalog? = null
+
         fun get(context: Context): AppCatalog =
             instance ?: synchronized(this) {
                 instance ?: AppCatalog(context.applicationContext).also { instance = it }

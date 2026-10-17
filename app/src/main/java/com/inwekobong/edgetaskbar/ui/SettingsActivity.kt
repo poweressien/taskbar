@@ -1,163 +1,300 @@
 package com.inwekobong.edgetaskbar.ui
 
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
-import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
-import android.widget.ScrollView
+import android.provider.Settings
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import com.inwekobong.edgetaskbar.data.AppCatalog
+import androidx.lifecycle.repeatOnLifecycle
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.button.MaterialButtonToggleGroup
+import com.inwekobong.edgetaskbar.R
 import com.inwekobong.edgetaskbar.data.DockAlign
 import com.inwekobong.edgetaskbar.data.DockEdge
-import com.inwekobong.edgetaskbar.data.SettingsRepository
 import com.inwekobong.edgetaskbar.data.TaskbarSettings
 import com.inwekobong.edgetaskbar.data.ThemeMode
 import com.inwekobong.edgetaskbar.data.WindowMode
-import com.inwekobong.edgetaskbar.nav.NavAccessibilityService
-import com.inwekobong.edgetaskbar.windows.WindowLauncher
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.provider.Settings
-import com.inwekobong.edgetaskbar.overlay.dp
-import kotlinx.coroutines.flow.first
+import com.inwekobong.edgetaskbar.databinding.ActivitySettingsBinding
+import com.inwekobong.edgetaskbar.databinding.RowChoiceBinding
+import com.inwekobong.edgetaskbar.databinding.RowItemBinding
+import com.inwekobong.edgetaskbar.databinding.RowSliderBinding
+import com.inwekobong.edgetaskbar.databinding.RowSwitchBinding
+import com.inwekobong.edgetaskbar.databinding.SectionCardBinding
 import kotlinx.coroutines.launch
 
-/** Every control writes to DataStore; the running service observes it and re-lays out immediately. */
 class SettingsActivity : AppCompatActivity() {
 
-    private lateinit var repo: SettingsRepository
+    private lateinit var b: ActivitySettingsBinding
+    private val vm: SettingsViewModel by viewModels()
+
+    private var latest = TaskbarSettings()
+    private var sliding = false
+    private val refreshers = mutableListOf<(TaskbarSettings) -> Unit>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        repo = SettingsRepository.get(this)
-        lifecycleScope.launch { build(repo.current()) }
+        b = ActivitySettingsBinding.inflate(layoutInflater)
+        setContentView(b.root)
+        b.root.applySystemBarPadding()
+        b.toolbar.setNavigationOnClickListener { finish() }
+
+        latest = vm.settings.value
+        buildSections()
+        refresh(latest)
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.settings.collect { s ->
+                    if (!sliding) {
+                        latest = s
+                        refresh(s)
+                    }
+                }
+            }
+        }
     }
 
-    private fun change(f: (TaskbarSettings) -> TaskbarSettings) {
-        lifecycleScope.launch { repo.update(f) }
+    private fun refresh(s: TaskbarSettings) {
+        b.preview.render(s)
+        refreshers.forEach { it(s) }
     }
 
-    private fun build(s: TaskbarSettings) {
-        val col = pageColumn()
-        col.addView(text("Settings", 26f, true))
+    // ---- sections -----------------------------------------------------------------------
 
-        // Position: visual selector
-        col.addView(header("DOCK POSITION"))
-        val tiles = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val tileViews = DockEdge.values().map { e ->
-            EdgeTile(this, e, e == s.edge) { }
+    private fun buildSections() {
+        // Mode
+        val modeBody = section(R.string.sec_mode)
+        val edgeRow = choiceRow(modeBody, R.string.mode_position_title)
+        val alignRow = choiceRow(modeBody, R.string.mode_align_title)
+        val handleRow = sliderRow(modeBody, R.string.mode_handle_title, 36, 120, "dp",
+            { it.handleLengthDp }) { s, v -> s.copy(handleLengthDp = v) }
+        val pinnedRow = switchRow(modeBody, R.string.mode_pinned_title, R.string.mode_pinned_sub,
+            { it.pinnedBar }) { s, v -> s.copy(pinnedBar = v) }
+        modeBody.removeView(pinnedRow)
+        modeBody.addView(pinnedRow, 0)
+
+        val edgeGroup = toggleGroup(edgeRow, listOf(
+            R.string.edge_top to DockEdge.TOP, R.string.edge_bottom to DockEdge.BOTTOM,
+            R.string.edge_left to DockEdge.LEFT, R.string.edge_right to DockEdge.RIGHT,
+        ), { it.edge }) { s, v -> s.copy(edge = v) }
+        val alignGroup = toggleGroup(alignRow, listOf(
+            R.string.align_start to DockAlign.START, R.string.align_center to DockAlign.CENTER,
+            R.string.align_end to DockAlign.END,
+        ), { it.align }) { s, v -> s.copy(align = v) }
+        refreshers += { s ->
+            // The pinned bar is always at the bottom and centered, so those choices only apply to the floating dock.
+            edgeRow.root.visibility = if (s.pinnedBar) View.GONE else View.VISIBLE
+            alignRow.root.visibility = if (s.pinnedBar || !s.edge.isHorizontal) View.GONE else View.VISIBLE
+            handleRow.visibility = if (s.pinnedBar) View.GONE else View.VISIBLE
         }
-        tileViews.forEachIndexed { i, t ->
-            val edge = DockEdge.values()[i]
-            t.setOnClickListener {
-                tileViews.forEach { v -> v.setSelectedTile(v === t) }
-                change { it.copy(edge = edge) }
-            }
-            tiles.addView(t)
-        }
-        col.addView(tiles)
+        check(edgeGroup.childCount == 4 && alignGroup.childCount == 3)
 
-        col.addView(header("ALIGNMENT (TOP / BOTTOM)"))
-        col.addView(radioGroup(DockAlign.values().map { it.name.lowercase().replaceFirstChar { c -> c.uppercase() } },
-            s.align.ordinal) { idx -> change { it.copy(align = DockAlign.values()[idx]) } })
+        // Icons
+        val iconBody = section(R.string.sec_icons)
+        sliderRow(iconBody, R.string.icon_size_title, TaskbarSettings.MIN_ICON, TaskbarSettings.MAX_ICON, "dp",
+            { it.iconSizeDp }) { s, v -> s.copy(iconSizeDp = v) }
+        sliderRow(iconBody, R.string.icon_spacing_title, 0, 24, "dp",
+            { it.spacingDp }) { s, v -> s.copy(spacingDp = v) }
+        sliderRow(iconBody, R.string.icon_count_title, 3, 10, "",
+            { it.maxVisibleIcons }) { s, v -> s.copy(maxVisibleIcons = v) }
 
-        col.addView(header("ICONS"))
-        col.addView(sliderRow("Icon size", 24, 64, s.iconSizeDp, " dp") { v -> change { it.copy(iconSizeDp = v) } })
-        col.addView(sliderRow("Icon spacing", 0, 24, s.spacingDp, " dp") { v -> change { it.copy(spacingDp = v) } })
-        col.addView(sliderRow("Max icons per page", 3, 10, s.maxVisibleIcons, "") { v -> change { it.copy(maxVisibleIcons = v) } })
+        // Appearance
+        val lookBody = section(R.string.sec_look)
+        sliderRow(lookBody, R.string.look_opacity_title, 30, 100, "%",
+            { it.opacityPercent }) { s, v -> s.copy(opacityPercent = v) }
+        sliderRow(lookBody, R.string.look_radius_title, 0, 32, "dp",
+            { it.cornerRadiusDp }) { s, v -> s.copy(cornerRadiusDp = v) }
+        sliderRow(lookBody, R.string.look_padding_title, 4, 24, "dp",
+            { it.paddingDp }) { s, v -> s.copy(paddingDp = v) }
+        toggleGroup(choiceRow(lookBody, R.string.look_theme_title), listOf(
+            R.string.theme_system to ThemeMode.FOLLOW_SYSTEM, R.string.theme_light to ThemeMode.LIGHT,
+            R.string.theme_dark to ThemeMode.DARK,
+        ), { it.theme }) { s, v -> s.copy(theme = v) }
 
-        col.addView(header("DOCK SHAPE"))
-        col.addView(sliderRow("Dock padding", 4, 24, s.paddingDp, " dp") { v -> change { it.copy(paddingDp = v) } })
-        col.addView(sliderRow("Corner radius", 0, 32, s.cornerRadiusDp, " dp") { v -> change { it.copy(cornerRadiusDp = v) } })
-        col.addView(sliderRow("Handle length", 36, 120, s.handleLengthDp, " dp") { v -> change { it.copy(handleLengthDp = v) } })
-        col.addView(sliderRow("Background opacity", 30, 100, s.opacityPercent, "%") { v -> change { it.copy(opacityPercent = v) } })
-
-        col.addView(header("APPEARANCE (DOCK ONLY)"))
-        col.addView(radioGroup(listOf("Follow system", "Light", "Dark"), s.theme.ordinal) { idx ->
-            change { it.copy(theme = ThemeMode.values()[idx]) }
-        })
-
-        col.addView(header("BOTTOM BAR, NAV BUTTONS & WINDOWS"))
-        col.addView(switchRow("Pin taskbar to bottom (always visible)", s.pinnedBar) { b -> change { it.copy(pinnedBar = b) } })
-        col.addView(switchRow("Back / Home / Recents buttons at top", s.navTop) { b ->
-            change { it.copy(navTop = b) }
-            if (b && NavAccessibilityService.instance == null) {
-                Toast.makeText(this, "Turn on EdgeTaskbar in Accessibility settings", Toast.LENGTH_LONG).show()
-                openAccessibility()
-            }
-        })
-        col.addView(text("Window layout for launched apps", 14f).apply { setPadding(0, dp(10), 0, 0) })
-        col.addView(radioGroup(WindowMode.values().map { it.label }, s.windowMode.ordinal, vertical = true) { idx ->
-            WindowLauncher.resetSlots()
-            change { it.copy(windowMode = WindowMode.values()[idx]) }
-        })
+        // Windows
+        val winBody = section(R.string.sec_windows)
+        toggleGroup(choiceRow(winBody, R.string.win_layout_title), listOf(
+            R.string.win_full to WindowMode.FULL, R.string.win_split to WindowMode.SPLIT,
+            R.string.win_quad to WindowMode.QUAD, R.string.win_free to WindowMode.FREEFORM,
+        ), { it.windowMode }) { s, v -> s.copy(windowMode = v) }
         val freeform = packageManager.hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT)
-        col.addView(text(
-            (if (freeform) "This device reports free-form window support. " else
-                "This device does not report free-form window support; Split/Quad may still work, free-form may open full screen. ") +
-                "Windows are drawn and moved by Android itself (drag the title bar, resize edges). Apps that disable resizing open full screen. " +
-                "Whether several apps keep playing audio at once is decided by each app.", 12f))
-        col.addView(button("Set EdgeTaskbar as home app") { launchSettings(Settings.ACTION_HOME_SETTINGS) })
-        col.addView(button("Open accessibility settings") { openAccessibility() })
-        col.addView(button("Open developer options (free-form windows)") {
-            launchSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
-        })
-        col.addView(text(
-            "Android cannot hide or move its own navigation bar. For a clean bottom, switch System navigation to " +
-                "Gestures. On Android 13+, if the accessibility switch is greyed out: Settings > Apps > EdgeTaskbar > " +
-                "menu > Allow restricted settings.", 12f))
+        noteRow(winBody, if (freeform) R.string.win_note_supported else R.string.win_note_unsupported)
+        actionRow(winBody, R.drawable.ic_settings, R.string.win_dev_title, getString(R.string.win_dev_sub),
+            R.string.action_open) { openSafely(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }
 
-        col.addView(header("BEHAVIOR"))
-        col.addView(switchRow("Collapse after launching an app", s.collapseAfterLaunch) { b -> change { it.copy(collapseAfterLaunch = b) } })
-        col.addView(sliderRow("Auto-collapse after (0 = never)", 0, 60, s.autoCollapseSeconds, " s") { v -> change { it.copy(autoCollapseSeconds = v) } })
-        col.addView(switchRow("Hide while keyboard is open (best effort)", s.hideOnKeyboard) { b -> change { it.copy(hideOnKeyboard = b) } })
-        col.addView(switchRow("Start taskbar after reboot", s.startOnBoot) { b -> change { it.copy(startOnBoot = b) } })
-        col.addView(text(
-            "Collapse = shrink to the small handle. Hide (× on the dock, or the notification action) removes " +
-                "the whole overlay until you tap Show. Keyboard detection and boot start depend on the device " +
-                "and manufacturer and are not guaranteed.", 12f))
+        // Behavior
+        val behBody = section(R.string.sec_behavior)
+        switchRow(behBody, R.string.beh_collapse_launch, null,
+            { it.collapseAfterLaunch }) { s, v -> s.copy(collapseAfterLaunch = v) }
+        sliderRow(behBody, R.string.beh_autocollapse_title, 0, 60, "s",
+            { it.autoCollapseSeconds }) { s, v -> s.copy(autoCollapseSeconds = v) }
+        switchRow(behBody, R.string.beh_keyboard_title, R.string.beh_keyboard_sub,
+            { it.hideOnKeyboard }) { s, v -> s.copy(hideOnKeyboard = v) }
+        switchRow(behBody, R.string.beh_boot_title, R.string.beh_boot_sub,
+            { it.startOnBoot }) { s, v -> s.copy(startOnBoot = v) }
 
-        col.addView(header("MAINTENANCE"))
-        col.addView(text("Recent apps list only shows apps launched from this dock, not system-wide history.", 12f))
-        col.addView(button(getString(com.inwekobong.edgetaskbar.R.string.clear_recents)) {
-            lifecycleScope.launch { repo.clearRecents() }
-        })
-        col.addView(button(getString(com.inwekobong.edgetaskbar.R.string.cleanup_stale)) {
-            lifecycleScope.launch {
-                val catalog = AppCatalog.get(this@SettingsActivity)
-                catalog.load(true)
-                val cur = repo.pinned.first()
-                val alive = cur.filter { catalog.find(it) != null }
-                repo.setPinned(alive)
-                Toast.makeText(this@SettingsActivity, "Removed ${cur.size - alive.size} stale pin(s)", Toast.LENGTH_SHORT).show()
+        // System
+        val sysBody = section(R.string.sec_system)
+        switchRow(sysBody, R.string.sys_nav_title, R.string.sys_nav_sub,
+            { it.navTop }) { s, v ->
+            s.copy(navTop = v)
+        }
+        actionRow(sysBody, R.drawable.ic_home, R.string.sys_home_title, getString(R.string.sys_home_sub),
+            R.string.action_set) { openSafely(Intent(Settings.ACTION_HOME_SETTINGS)) }
+        actionRow(sysBody, R.drawable.ic_info, R.string.sys_battery_title, getString(R.string.sys_battery_sub),
+            R.string.action_open) {
+            openSafely(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        }
+
+        // Maintenance
+        val maintBody = section(R.string.sec_maintenance)
+        actionRow(maintBody, R.drawable.ic_close, R.string.maint_clear_title, getString(R.string.maint_clear_sub),
+            R.string.action_run) {
+            vm.clearRecents { Toast.makeText(this, R.string.toast_cleared, Toast.LENGTH_SHORT).show() }
+        }
+        actionRow(maintBody, R.drawable.ic_pin, R.string.maint_cleanup_title, getString(R.string.maint_cleanup_sub),
+            R.string.action_run) {
+            vm.removeStalePins { n ->
+                Toast.makeText(this, getString(R.string.toast_removed_stale, n), Toast.LENGTH_SHORT).show()
             }
-        })
-        col.addView(button(getString(com.inwekobong.edgetaskbar.R.string.pick_apps)) {
-            startActivity(android.content.Intent(this, AppPickerActivity::class.java))
-        })
-
-        setContentView(ScrollView(this).apply { addView(col) })
-    }
-
-    private fun openAccessibility() = launchSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-
-    private fun launchSettings(action: String) {
-        try { startActivity(Intent(action)) } catch (_: Exception) {
-            Toast.makeText(this, "Not available on this device", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun radioGroup(
-        labels: List<String>, checked: Int, vertical: Boolean = false, onPick: (Int) -> Unit,
-    ): RadioGroup =
-        RadioGroup(this).apply {
-            orientation = if (vertical) RadioGroup.VERTICAL else RadioGroup.HORIZONTAL
-            labels.forEachIndexed { i, l ->
-                addView(RadioButton(context).apply { id = 1000 + i; text = l; setPadding(0, 0, dp(12), 0) })
-            }
-            check(1000 + checked)
-            setOnCheckedChangeListener { _, id -> onPick(id - 1000) }
+    private fun openSafely(i: Intent) {
+        try { startActivity(i) } catch (_: Exception) {
+            Toast.makeText(this, R.string.toast_unavailable, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    // ---- row builders -------------------------------------------------------------------
+
+    private fun section(title: Int): ViewGroup {
+        val sb = SectionCardBinding.inflate(LayoutInflater.from(this), b.content, false)
+        sb.sectionTitle.setText(title)
+        b.content.addView(sb.root)
+        return sb.sectionBody
+    }
+
+    private fun switchRow(
+        parent: ViewGroup, title: Int, subtitle: Int?,
+        get: (TaskbarSettings) -> Boolean, set: (TaskbarSettings, Boolean) -> TaskbarSettings,
+    ): View {
+        val r = RowSwitchBinding.inflate(LayoutInflater.from(this), parent, false)
+        r.title.setText(title)
+        if (subtitle != null) r.subtitle.setText(subtitle) else r.subtitle.visibility = View.GONE
+        r.toggle.setOnCheckedChangeListener { _, checked ->
+            if (checked != get(latest)) {
+                vm.update { set(it, checked) }
+                if (title == R.string.sys_nav_title && checked) openSafely(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+        }
+        r.root.setOnClickListener { r.toggle.toggle() }
+        refreshers += { s -> if (r.toggle.isChecked != get(s)) r.toggle.isChecked = get(s) }
+        parent.addView(r.root)
+        return r.root
+    }
+
+    private fun sliderRow(
+        parent: ViewGroup, title: Int, min: Int, max: Int, unit: String,
+        get: (TaskbarSettings) -> Int, set: (TaskbarSettings, Int) -> TaskbarSettings,
+    ): View {
+        val r = RowSliderBinding.inflate(LayoutInflater.from(this), parent, false)
+        r.title.setText(title)
+        r.slider.valueFrom = min.toFloat()
+        r.slider.valueTo = max.toFloat()
+        r.slider.stepSize = 1f
+        fun label(v: Int) { r.value.text = if (unit.isEmpty()) "$v" else "$v $unit" }
+        r.slider.addOnChangeListener { _, value, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            val v = value.toInt()
+            label(v)
+            latest = set(latest, v).sanitized()
+            b.preview.render(latest) // live preview while dragging; saved when the finger lifts
+        }
+        r.slider.addOnSliderTouchListener(object : com.google.android.material.slider.Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(slider: com.google.android.material.slider.Slider) { sliding = true }
+            override fun onStopTrackingTouch(slider: com.google.android.material.slider.Slider) {
+                sliding = false
+                val v = slider.value.toInt()
+                vm.update { set(it, v) }
+            }
+        })
+        refreshers += { s ->
+            val v = get(s).coerceIn(min, max)
+            if (r.slider.value.toInt() != v) r.slider.value = v.toFloat()
+            label(v)
+        }
+        parent.addView(r.root)
+        return r.root
+    }
+
+    private fun choiceRow(parent: ViewGroup, title: Int): RowChoiceBinding {
+        val r = RowChoiceBinding.inflate(LayoutInflater.from(this), parent, false)
+        r.title.setText(title)
+        parent.addView(r.root)
+        return r
+    }
+
+    /** One-of-N selector. Selecting the value that is already saved does nothing. */
+    private fun <T> toggleGroup(
+        row: RowChoiceBinding, options: List<Pair<Int, T>>,
+        get: (TaskbarSettings) -> T, set: (TaskbarSettings, T) -> TaskbarSettings,
+    ): MaterialButtonToggleGroup {
+        val g = MaterialButtonToggleGroup(this)
+        g.isSingleSelection = true
+        g.isSelectionRequired = true
+        val ids = options.map { (label, value) ->
+            val btn = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+            btn.id = View.generateViewId()
+            btn.setText(label)
+            btn.layoutParams = android.widget.LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            g.addView(btn)
+            btn.id to value
+        }
+        g.addOnButtonCheckedListener { _, id, checked ->
+            if (!checked) return@addOnButtonCheckedListener
+            val value = ids.firstOrNull { it.first == id }?.second ?: return@addOnButtonCheckedListener
+            if (value != get(latest)) vm.update { set(it, value) }
+        }
+        refreshers += { s ->
+            val target = ids.firstOrNull { it.second == get(s) }?.first
+            if (target != null && g.checkedButtonId != target) g.check(target)
+        }
+        row.holder.addView(g, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        return g
+    }
+
+    private fun actionRow(
+        parent: ViewGroup, icon: Int, title: Int, subtitle: String, actionText: Int, onClick: () -> Unit,
+    ) {
+        val r = RowItemBinding.inflate(LayoutInflater.from(this), parent, false)
+        r.icon.setImageResource(icon)
+        r.icon.imageTintList = android.content.res.ColorStateList.valueOf(
+            androidx.core.content.ContextCompat.getColor(this, R.color.et_text_secondary))
+        r.title.setText(title)
+        r.subtitle.text = subtitle
+        r.action.setText(actionText)
+        r.action.setOnClickListener { onClick() }
+        parent.addView(r.root)
+    }
+
+    private fun noteRow(parent: ViewGroup, text: Int) {
+        val tv = android.widget.TextView(this)
+        tv.setText(text)
+        tv.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+        tv.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.et_text_secondary))
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        tv.setPadding(pad, 0, pad, pad / 2)
+        parent.addView(tv)
+    }
 }
